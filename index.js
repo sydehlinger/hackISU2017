@@ -1,407 +1,430 @@
-/**
- * This sample demonstrates a simple skill built with the Amazon Alexa Skills Kit.
- * The Intent Schema, Custom Slots, and Sample Utterances for this skill, as well as
- * testing instructions are located at http://amzn.to/1LzFrj6
- *
- * For additional samples, visit the Alexa Skills Kit Getting Started guide at
- * http://amzn.to/1LGWsLG
- */
+'use strict';
+const Alexa = require('alexa-sdk');
 
-var Alexa = require('alexa-sdk');
+//=========================================================================================================================================
+//TODO: The items below this comment need your attention
+//=========================================================================================================================================
+
+//Replace with your app ID (OPTIONAL).  You can find this value at the top of your skill's page on http://developer.amazon.com.
+//Make sure to enclose your value in quotes, like this:  var APP_ID = "amzn1.ask.skill.bb4045e6-b3e8-4133-b650-72923c5980f1";
+var APP_ID = undefined;
+
+//This function returns a descriptive sentence about your data.  Before a user starts a quiz, they can ask about a specific data element,
+//like "Ohio."  The skill will speak the sentence from this function, pulling the data values from the appropriate record in your data.
+function getSpeechDescription(item)
+{
+    var sentence = item.StateName + " is the " + item.StatehoodOrder + "th state, admitted to the Union in " + item.StatehoodYear + ".  The capital of " + item.StateName + " is " + item.Capital + ", and the abbreviation for " + item.StateName + " is <break strength='strong'/><say-as interpret-as='spell-out'>" + item.Abbreviation + "</say-as>.  I've added " + item.StateName + " to your Alexa app.  Which other state or capital would you like to know about?";
+    return sentence;
+}
+
+//We have provided two ways to create your quiz questions.  The default way is to phrase all of your questions like: "What is X of Y?"
+//If this approach doesn't work for your data, take a look at the commented code in this function.  You can write a different question
+//structure for each property of your data.
+function getQuestion(counter, property, item)
+{
+    //Alexa will handle how the ordinals are pronounced. She'll correctly say "first" instead of "1th", or "second" instead of "2th"
+    return "Here is the " + counter + "th question. What is the " + formatCasing(property) + " of "  + item.StateName + "?";
+
+    /*
+    switch(property)
+    {
+        case "City":
+            return "Here is the " + counter + "th question. In what city do the " + item.League + "'s "  + item.Mascot + " play?";
+        break;
+        case "Sport":
+            return "Here is the " + counter + "th question. What sport do the " + item.City + " " + item.Mascot + " play?";
+        break;
+        case "HeadCoach":
+            return "Here is the " + counter + "th question. Who is the head coach of the " + item.City + " " + item.Mascot + "?";
+        break;
+        default:
+            return "Here is the " + counter + "th question. What is the " + formatCasing(property) + " of the "  + item.Mascot + "?";
+        break;
+    }
+    */
+}
+
+//This is the function that returns an answer to your user during the quiz.  Much like the "getQuestion" function above, you can use a
+//switch() statement to create different responses for each property in your data.  For example, when this quiz has an answer that includes
+//a state abbreviation, we add some SSML to make sure that Alexa spells that abbreviation out (instead of trying to pronounce it.)
+function getAnswer(property, item)
+{
+    switch(property)
+    {
+        case "Abbreviation":
+            return "The " + formatCasing(property) + " of " + item.StateName + " is <say-as interpret-as='spell-out'>" + item[property] + "</say-as>. "
+        break;
+        default:
+            return "The " + formatCasing(property) + " of " + item.StateName + " is " + item[property] + ". "
+        break;
+    }
+}
+
+//This is a list of positive speechcons that this skill will use when a user gets a correct answer.  For a full list of supported
+//speechcons, go here: https://developer.amazon.com/public/solutions/alexa/alexa-skills-kit/docs/speechcon-reference
+var speechConsCorrect = ["Booya", "All righty", "Bam", "Bazinga", "Bingo", "Boom", "Bravo", "Cha Ching", "Cheers", "Dynomite",
+"Hip hip hooray", "Hurrah", "Hurray", "Huzzah", "Oh dear.  Just kidding.  Hurray", "Kaboom", "Kaching", "Oh snap", "Phew",
+"Righto", "Way to go", "Well done", "Whee", "Woo hoo", "Yay", "Wowza", "Yowsa"];
+
+//This is a list of negative speechcons that this skill will use when a user gets an incorrect answer.  For a full list of supported
+//speechcons, go here: https://developer.amazon.com/public/solutions/alexa/alexa-skills-kit/docs/speechcon-reference
+var speechConsWrong = ["Argh", "Aw man", "Blarg", "Blast", "Boo", "Bummer", "Darn", "D'oh", "Dun dun dun", "Eek", "Honk", "Le sigh",
+"Mamma mia", "Oh boy", "Oh dear", "Oof", "Ouch", "Ruh roh", "Shucks", "Uh oh", "Wah wah", "Whoops a daisy", "Yikes"];
+
+//This is the welcome message for when a user starts the skill without a specific intent.
+var WELCOME_MESSAGE = "Welcome to the United States Quiz Game!  You can ask me about any of the fifty states and their capitals, or you can ask me to start a quiz.  What would you like to do?";
+
+//This is the message a user will hear when they start a quiz.
+var START_QUIZ_MESSAGE = "OK.  I will ask you 10 questions about the United States.";
+
+//This is the message a user will hear when they try to cancel or stop the skill, or when they finish a quiz.
+var EXIT_SKILL_MESSAGE = "Thank you for playing the United States Quiz Game!  Let's play again soon!";
+
+//This is the message a user will hear after they ask (and hear) about a specific data element.
+var REPROMPT_SPEECH = "Which other state or capital would you like to know about?";
+
+//This is the message a user will hear when they ask Alexa for help in your skill.
+var HELP_MESSAGE = "I know lots of things about the United States.  You can ask me about a state or a capital, and I'll tell you what I know.  You can also test your knowledge by asking me to start a quiz.  What would you like to do?";
+
+
+//This is the response a user will receive when they ask about something we weren't expecting.  For example, say "pizza" to your
+//skill when it starts.  This is the response you will receive.
+function getBadAnswer(item) { return "I'm sorry. " + item + " is not something I know very much about in this skill. " + HELP_MESSAGE; }
+
+//This is the message a user will receive after each question of a quiz.  It reminds them of their current score.
+function getCurrentScore(score, counter) { return "Your current score is " + score + " out of " + counter + ". "; }
+
+//This is the message a user will receive after they complete a quiz.  It tells them their final score.
+function getFinalScore(score, counter) { return "Your final score is " + score + " out of " + counter + ". "; }
+
+//These next four values are for the Alexa cards that are created when a user asks about one of the data elements.
+//This only happens outside of a quiz.
+
+//If you don't want to use cards in your skill, set the USE_CARDS_FLAG to false.  If you set it to true, you will need an image for each
+//item in your data.
+var USE_CARDS_FLAG = true;
+
+//This is what your card title will be.  For our example, we use the name of the state the user requested.
+function getCardTitle(item) { return item.StateName;}
+
+//This is the small version of the card image.  We use our data as the naming convention for our images so that we can dynamically
+//generate the URL to the image.  The small image should be 720x400 in dimension.
+function getSmallImage(item) { return "https://m.media-amazon.com/images/G/01/mobile-apps/dex/alexa/alexa-skills-kit/tutorials/quiz-game/state_flag/720x400/" + item.Abbreviation + "._TTH_.png"; }
+
+//This is the large version of the card image.  It should be 1200x800 pixels in dimension.
+function getLargeImage(item) { return "https://m.media-amazon.com/images/G/01/mobile-apps/dex/alexa/alexa-skills-kit/tutorials/quiz-game/state_flag/1200x800/" + item.Abbreviation + "._TTH_.png"; }
+
+//=========================================================================================================================================
+//TODO: Replace this data with your own.
+//=========================================================================================================================================
+var data = [
+                {StateName: "Alabama",        Abbreviation: "AL", Capital: "Montgomery",     StatehoodYear: 1819, StatehoodOrder: 22 },
+                {StateName: "Alaska",         Abbreviation: "AK", Capital: "Juneau",         StatehoodYear: 1959, StatehoodOrder: 49 },
+                {StateName: "Arizona",        Abbreviation: "AZ", Capital: "Phoenix",        StatehoodYear: 1912, StatehoodOrder: 48 },
+                {StateName: "Arkansas",       Abbreviation: "AR", Capital: "Little Rock",    StatehoodYear: 1836, StatehoodOrder: 25 },
+                {StateName: "California",     Abbreviation: "CA", Capital: "Sacramento",     StatehoodYear: 1850, StatehoodOrder: 31 },
+                {StateName: "Colorado",       Abbreviation: "CO", Capital: "Denver",         StatehoodYear: 1876, StatehoodOrder: 38 },
+                {StateName: "Connecticut",    Abbreviation: "CT", Capital: "Hartford",       StatehoodYear: 1788, StatehoodOrder: 5 },
+                {StateName: "Delaware",       Abbreviation: "DE", Capital: "Dover",          StatehoodYear: 1787, StatehoodOrder: 1 },
+                {StateName: "Florida",        Abbreviation: "FL", Capital: "Tallahassee",    StatehoodYear: 1845, StatehoodOrder: 27 },
+                {StateName: "Georgia",        Abbreviation: "GA", Capital: "Atlanta",        StatehoodYear: 1788, StatehoodOrder: 4 },
+                {StateName: "Hawaii",         Abbreviation: "HI", Capital: "Honolulu",       StatehoodYear: 1959, StatehoodOrder: 50 },
+                {StateName: "Idaho",          Abbreviation: "ID", Capital: "Boise",          StatehoodYear: 1890, StatehoodOrder: 43 },
+                {StateName: "Illinois",       Abbreviation: "IL", Capital: "Springfield",    StatehoodYear: 1818, StatehoodOrder: 21 },
+                {StateName: "Indiana",        Abbreviation: "IN", Capital: "Indianapolis",   StatehoodYear: 1816, StatehoodOrder: 19 },
+                {StateName: "Iowa",           Abbreviation: "IA", Capital: "Des Moines",     StatehoodYear: 1846, StatehoodOrder: 29 },
+                {StateName: "Kansas",         Abbreviation: "KS", Capital: "Topeka",         StatehoodYear: 1861, StatehoodOrder: 34 },
+                {StateName: "Kentucky",       Abbreviation: "KY", Capital: "Frankfort",      StatehoodYear: 1792, StatehoodOrder: 15 },
+                {StateName: "Louisiana",      Abbreviation: "LA", Capital: "Baton Rouge",    StatehoodYear: 1812, StatehoodOrder: 18 },
+                {StateName: "Maine",          Abbreviation: "ME", Capital: "Augusta",        StatehoodYear: 1820, StatehoodOrder: 23 },
+                {StateName: "Maryland",       Abbreviation: "MD", Capital: "Annapolis",      StatehoodYear: 1788, StatehoodOrder: 7 },
+                {StateName: "Massachusetts",  Abbreviation: "MA", Capital: "Boston",         StatehoodYear: 1788, StatehoodOrder: 6 },
+                {StateName: "Michigan",       Abbreviation: "MI", Capital: "Lansing",        StatehoodYear: 1837, StatehoodOrder: 26 },
+                {StateName: "Minnesota",      Abbreviation: "MN", Capital: "St. Paul",       StatehoodYear: 1858, StatehoodOrder: 32 },
+                {StateName: "Mississippi",    Abbreviation: "MS", Capital: "Jackson",        StatehoodYear: 1817, StatehoodOrder: 20 },
+                {StateName: "Missouri",       Abbreviation: "MO", Capital: "Jefferson City", StatehoodYear: 1821, StatehoodOrder: 24 },
+                {StateName: "Montana",        Abbreviation: "MT", Capital: "Helena",         StatehoodYear: 1889, StatehoodOrder: 41 },
+                {StateName: "Nebraska",       Abbreviation: "NE", Capital: "Lincoln",        StatehoodYear: 1867, StatehoodOrder: 37 },
+                {StateName: "Nevada",         Abbreviation: "NV", Capital: "Carson City",    StatehoodYear: 1864, StatehoodOrder: 36 },
+                {StateName: "New Hampshire",  Abbreviation: "NH", Capital: "Concord",        StatehoodYear: 1788, StatehoodOrder: 9 },
+                {StateName: "New Jersey",     Abbreviation: "NJ", Capital: "Trenton",        StatehoodYear: 1787, StatehoodOrder: 3 },
+                {StateName: "New Mexico",     Abbreviation: "NM", Capital: "Santa Fe",       StatehoodYear: 1912, StatehoodOrder: 47 },
+                {StateName: "New York",       Abbreviation: "NY", Capital: "Albany",         StatehoodYear: 1788, StatehoodOrder: 11 },
+                {StateName: "North Carolina", Abbreviation: "NC", Capital: "Raleigh",        StatehoodYear: 1789, StatehoodOrder: 12 },
+                {StateName: "North Dakota",   Abbreviation: "ND", Capital: "Bismarck",       StatehoodYear: 1889, StatehoodOrder: 39 },
+                {StateName: "Ohio",           Abbreviation: "OH", Capital: "Columbus",       StatehoodYear: 1803, StatehoodOrder: 17 },
+                {StateName: "Oklahoma",       Abbreviation: "OK", Capital: "Oklahoma City",  StatehoodYear: 1907, StatehoodOrder: 46 },
+                {StateName: "Oregon",         Abbreviation: "OR", Capital: "Salem",          StatehoodYear: 1859, StatehoodOrder: 33 },
+                {StateName: "Pennsylvania",   Abbreviation: "PA", Capital: "Harrisburg",     StatehoodYear: 1787, StatehoodOrder: 2 },
+                {StateName: "Rhode Island",   Abbreviation: "RI", Capital: "Providence",     StatehoodYear: 1790, StatehoodOrder: 13 },
+                {StateName: "South Carolina", Abbreviation: "SC", Capital: "Columbia",       StatehoodYear: 1788, StatehoodOrder: 8 },
+                {StateName: "South Dakota",   Abbreviation: "SD", Capital: "Pierre",         StatehoodYear: 1889, StatehoodOrder: 40 },
+                {StateName: "Tennessee",      Abbreviation: "TN", Capital: "Nashville",      StatehoodYear: 1796, StatehoodOrder: 16 },
+                {StateName: "Texas",          Abbreviation: "TX", Capital: "Austin",         StatehoodYear: 1845, StatehoodOrder: 28 },
+                {StateName: "Utah",           Abbreviation: "UT", Capital: "Salt Lake City", StatehoodYear: 1896, StatehoodOrder: 45 },
+                {StateName: "Vermont",        Abbreviation: "VT", Capital: "Montpelier",     StatehoodYear: 1791, StatehoodOrder: 14 },
+                {StateName: "Virginia",       Abbreviation: "VA", Capital: "Richmond",       StatehoodYear: 1788, StatehoodOrder: 10 },
+                {StateName: "Washington",     Abbreviation: "WA", Capital: "Olympia",        StatehoodYear: 1889, StatehoodOrder: 42 },
+                {StateName: "West Virginia",  Abbreviation: "WV", Capital: "Charleston",     StatehoodYear: 1863, StatehoodOrder: 35 },
+                {StateName: "Wisconsin",      Abbreviation: "WI", Capital: "Madison",        StatehoodYear: 1848, StatehoodOrder: 30 },
+                {StateName: "Wyoming",        Abbreviation: "WY", Capital: "Cheyenne",       StatehoodYear: 1890, StatehoodOrder: 44 }
+            ];
+
+//=========================================================================================================================================
+//Editing anything below this line might break your skill.
+//=========================================================================================================================================
+
+var counter = 0;
 
 var states = {
-    STARTMODE: '_STARTMODE',                // Prompt the user to start or restart the game.
-    ASKMODE: '_ASKMODE',                    // Alexa is asking user the questions.
-    DESCRIPTIONMODE: '_DESCRIPTIONMODE'     // Alexa is describing the final choice and prompting to start again or quit
+    START: "_START",
+    QUIZ: "_QUIZ"
 };
 
+const handlers = {
+     "LaunchRequest": function() {
+        this.handler.state = states.START;
+        this.emitWithState("Start");
+     },
+    "QuizIntent": function() {
+        this.handler.state = states.QUIZ;
+        this.emitWithState("Quiz");
+    },
+    "AnswerIntent": function() {
+        this.handler.state = states.START;
+        this.emitWithState("AnswerIntent");
+    },
+    "AMAZON.HelpIntent": function() {
+        this.response.speak(HELP_MESSAGE).listen(HELP_MESSAGE);
+        this.emit(":responseReady");
+    },
+    "Unhandled": function() {
+        this.handler.state = states.START;
+        this.emitWithState("Start");
+    }
+};
 
-// Questions
-var nodes = [{ "node": 1, "message": "Do you like working with people", "yes": 2, "no": 3 },
-             { "node": 2, "message": "Do you like caring for others", "yes": 4, "no": 5 },
-             { "node": 3, "message": "Would you like to work during the day", "yes": 6, "no": 7 },
-             { "node": 4, "message": "Can you stand the sight of blood", "yes": 8, "no": 9 },
-             { "node": 5, "message": "Is money the most important thing in your life", "yes": 10, "no": 11 },
-             { "node": 6, "message": "Do you want to work with animals", "yes": 12, "no": 13 },
-             { "node": 7, "message": "Are you active", "yes": 14, "no": 15 },
+var startHandlers = Alexa.CreateStateHandler(states.START,{
+    "Start": function() {
+        this.response.speak(WELCOME_MESSAGE).listen(HELP_MESSAGE);
+        this.emit(":responseReady");
+    },
+    "AnswerIntent": function() {
+        var item = getItem(this.event.request.intent.slots);
 
-// Answers & descriptions
-             { "node": 8, "message": "Doctor", "yes": 0, "no": 0, "description": "A physician or medical doctor is a professional who practices medicine." },
-             { "node": 9, "message": "Teacher", "yes": 0, "no": 0, "description": "In education, teachers facilitate student learning, often in a school or academy or perhaps in another environment such as outdoors."},
-             { "node": 10, "message": "Sales person", "yes": 0, "no": 0 , "description": "A salesman is someone who works in sales, with the main function of selling products or services to others."},
-             { "node": 11, "message": "Artist", "yes": 0, "no": 0 , "description": "An artist is a person engaged in one or more of any of a broad spectrum of activities related to creating art, practicing the arts, and, or demonstrating an art."},
-             { "node": 12, "message": "Zookeeper", "yes": 0, "no": 0 , "description": "A zookeeper is a person who manages zoo animals that are kept in captivity for conservation or to be displayed to the public, and are usually responsible for the feeding and daily care of the animals."},
-             { "node": 13, "message": "Software engineer", "yes": 0, "no": 0 , "description": "A software engineer is a person who applies the principles of software engineering to the design, development, maintenance, testing, and evaluation of the software and systems that make computers or anything containing software work."},
-             { "node": 14, "message": "Security Guard", "yes": 0, "no": 0 , "description": "A security guard is a private person who is paid to protect an organization's assets from various hazards such as criminal activity, by utilizing preventative measures. "},
-             { "node": 15, "message": "Lighthouse keeper", "yes": 0, "no": 0 , "description": "A lighthouse keeper is the person responsible for tending and caring for a lighthouse, particularly the light and lens in the days when oil lamps and clockwork mechanisms were used."},
-];
+        if (item && item[Object.getOwnPropertyNames(data[0])[0]] != undefined)
+        {
+          console.log("\nMEMO's TEST\n");
+            if (USE_CARDS_FLAG)
+            {
+                var imageObj = {smallImageUrl: getSmallImage(item), largeImageUrl: getLargeImage(item)};
 
-// This is used for keeping track of visited nodes when we test for loops in the tree
-var visited;
+                this.response.speak(getSpeechDescription(item)).listen(REPROMPT_SPEECH);
+                this.response.cardRenderer(getCardTitle(item), getTextDescription(item), imageObj);
+            }
+            else
+            {
+                this.response.speak(getSpeechDescription(item)).listen(REPROMPT_SPEECH);
+            }
+        }
+        else
+        {
+            this.response.speak(getBadAnswer(item)).listen(getBadAnswer(item));
+        }
 
-// These are messages that Alexa says to the user during conversation
+        this.emit(":responseReady");
+    },
+    "QuizIntent": function() {
+        this.handler.state = states.QUIZ;
+        this.emitWithState("Quiz");
+    },
+    "AMAZON.RepeatIntent": function() {
+        this.emitWithState("AskQuestion");
+    },
+    "AMAZON.StopIntent": function() {
+        this.response.speak(EXIT_SKILL_MESSAGE);
+        this.emit(":responseReady");
+    },
+    "AMAZON.CancelIntent": function() {
+        this.response.speak(EXIT_SKILL_MESSAGE);
+        this.emit(":responseReady");
+    },
+    "AMAZON.HelpIntent": function() {
+        this.response.speak(HELP_MESSAGE).listen(HELP_MESSAGE);
+        this.emit(":responseReady");
+    },
+    "Unhandled": function() {
+        this.emitWithState("Start");
+    }
+});
 
-// This is the initial welcome message
-var welcomeMessage = "Welcome to decision tree, are you ready to play?";
 
-// This is the message that is repeated if the response to the initial welcome message is not heard
-var repeatWelcomeMessage = "Say yes to start the game or no to quit.";
+var quizHandlers = Alexa.CreateStateHandler(states.QUIZ,{
+    "Quiz": function() {
+        this.attributes["response"] = "";
+        this.attributes["counter"] = 0;
+        this.attributes["quizscore"] = 0;
+        this.emitWithState("AskQuestion");
+    },
+    "AskQuestion": function() {
 
-// This is the message that is repeated if Alexa does not hear/understand the response to the welcome message
-var promptToStartMessage = "Say yes to continue, or no to end the game.";
+        if (this.attributes["counter"] == 0)
+        {
+            this.attributes["response"] = START_QUIZ_MESSAGE + " ";
+        }
 
-// This is the prompt during the game when Alexa doesnt hear or understand a yes / no reply
-var promptToSayYesNo = "Say yes or no to answer the question.";
+        var random = getRandom(0, data.length-1);
+        var item = data[random];
 
-// This is the response to the user after the final question when Alexa decides on what group choice the user should be given
-var decisionMessage = "I think you would make a good";
+        var propertyArray = Object.getOwnPropertyNames(item);
+        var property = propertyArray[getRandom(1, propertyArray.length-1)];
 
-// This is the prompt to ask the user if they would like to hear a short description of their chosen profession or to play again
-var playAgainMessage = "Say 'tell me more' to hear a short description for this profession, or do you want to play again?";
+        this.attributes["quizitem"] = item;
+        this.attributes["quizproperty"] = property;
 
-// This is the help message during the setup at the beginning of the game
-var helpMessage = "I will ask you some questions that will identify what you would be best at. Want to start now?";
+        this.attributes["counter"]++;
 
-// This is the goodbye message when the user has asked to quit the game
-var goodbyeMessage = "Ok, see you next time!";
+        var question = getQuestion(this.attributes["counter"], property, item);
+        var speech = this.attributes["response"] + question;
 
-var speechNotFoundMessage = "Could not find speech for node";
+        this.response.speak(speech).listen(question);
+        this.emit(":responseReady");
+    },
+    "AnswerIntent": function() {
+        var response = "";
+        var speechOutput = "";
+        var item = this.attributes["quizitem"];
+        var property = this.attributes["quizproperty"]
 
-var nodeNotFoundMessage = "In nodes array could not find node";
+        var correct = compareSlots(this.event.request.intent.slots, item[property]);
 
-var descriptionNotFoundMessage = "Could not find description for node";
+        if (correct)
+        {
+            response = getSpeechCon(true);
+            this.attributes["quizscore"]++;
+        }
+        else
+        {
+            response = getSpeechCon(false);
+        }
 
-var loopsDetectedMessage = "A repeated path was detected on the node tree, please fix before continuing";
+        response += getAnswer(property, item);
 
-var utteranceTellMeMore = "tell me more";
+        if (this.attributes["counter"] < 10)
+        {
+            response += getCurrentScore(this.attributes["quizscore"], this.attributes["counter"]);
+            this.attributes["response"] = response;
+            this.emitWithState("AskQuestion");
+        }
+        else
+        {
+            response += getFinalScore(this.attributes["quizscore"], this.attributes["counter"]);
+            speechOutput = response + " " + EXIT_SKILL_MESSAGE;
 
-var utterancePlayAgain = "play again";
+            this.response.speak(speechOutput);
+            this.emit(":responseReady");
+        }
+    },
+    "AMAZON.RepeatIntent": function() {
+        var question = getQuestion(this.attributes["counter"], this.attributes["quizproperty"], this.attributes["quizitem"]);
+        this.response.speak(question).listen(question);
+        this.emit(":responseReady");
+    },
+    "AMAZON.StartOverIntent": function() {
+        this.emitWithState("Quiz");
+    },
+    "AMAZON.StopIntent": function() {
+        this.response.speak(EXIT_SKILL_MESSAGE);
+        this.emit(":responseReady");
+    },
+    "AMAZON.CancelIntent": function() {
+        this.response.speak(EXIT_SKILL_MESSAGE);
+        this.emit(":responseReady");
+    },
+    "AMAZON.HelpIntent": function() {
+        this.response.speak(HELP_MESSAGE).listen(HELP_MESSAGE);
+        this.emit(":responseReady");
+    },
+    "Unhandled": function() {
+        this.emitWithState("AnswerIntent");
+    }
+});
 
-// the first node that we will use
-var START_NODE = 1;
+function compareSlots(slots, value)
+{
+    for (var slot in slots)
+    {
+        if (slots[slot].value != undefined)
+        {
+            if (slots[slot].value.toString().toLowerCase() == value.toString().toLowerCase())
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
-// --------------- Handlers -----------------------
+function getRandom(min, max)
+{
+    return Math.floor(Math.random() * (max-min+1)+min);
+}
 
-// Called when the session starts.
-exports.handler = function (event, context, callback) {
-    var alexa = Alexa.handler(event, context);
-    alexa.registerHandlers(newSessionHandler, startGameHandlers, askQuestionHandlers, descriptionHandlers);
+function getRandomSymbolSpeech(symbol)
+{
+    return "<say-as interpret-as='spell-out'>" + symbol + "</say-as>";
+}
+
+function getItem(slots)
+{
+    var propertyArray = Object.getOwnPropertyNames(data[0]);
+    var value;
+
+    for (var slot in slots)
+    {
+        if (slots[slot].value !== undefined)
+        {
+            value = slots[slot].value;
+            for (var property in propertyArray)
+            {
+                var item = data.filter(x => x[propertyArray[property]].toString().toLowerCase() === slots[slot].value.toString().toLowerCase());
+                if (item.length > 0)
+                {
+                    return item[0];
+                }
+            }
+        }
+    }
+    return value;
+}
+
+function getSpeechCon(type)
+{
+    var speechCon = "";
+    if (type) return "<say-as interpret-as='interjection'>" + speechConsCorrect[getRandom(0, speechConsCorrect.length-1)] + "! </say-as><break strength='strong'/>";
+    else return "<say-as interpret-as='interjection'>" + speechConsWrong[getRandom(0, speechConsWrong.length-1)] + " </say-as><break strength='strong'/>";
+}
+
+function formatCasing(key)
+{
+    key = key.split(/(?=[A-Z])/).join(" ");
+    return key;
+}
+
+function getTextDescription(item)
+{
+    var text = "";
+
+    for (var key in item)
+    {
+        text += formatCasing(key) + ": " + item[key] + "\n";
+    }
+    return text;
+}
+
+exports.handler = (event, context) => {
+    const alexa = Alexa.handler(event, context);
+    alexa.appId = APP_ID;
+    alexa.registerHandlers(handlers, startHandlers, quizHandlers);
     alexa.execute();
-};
-
-// set state to start up and  welcome the user
-var newSessionHandler = {
-  'LaunchRequest': function () {
-    this.handler.state = states.STARTMODE;
-    this.response.speak(welcomeMessage).listen(repeatWelcomeMessage);
-    this.emit(':responseReady');
-  },'AMAZON.HelpIntent': function () {
-    this.handler.state = states.STARTMODE;
-    this.response.speak(helpMessage).listen(helpMessage);
-    this.emit(':responseReady');    
-  },
-  'Unhandled': function () {
-    this.handler.state = states.STARTMODE;
-    this.response.speak(promptToStartMessage).listen(promptToStartMessage);
-    this.emit(':responseReady');    
-  }
-};
-
-// --------------- Functions that control the skill's behavior -----------------------
-
-// Called at the start of the game, picks and asks first question for the user
-var startGameHandlers = Alexa.CreateStateHandler(states.STARTMODE, {
-    'AMAZON.YesIntent': function () {
-
-        // ---------------------------------------------------------------
-        // check to see if there are any loops in the node tree - this section can be removed in production code
-        visited = [nodes.length];
-        var loopFound = helper.debugFunction_walkNode(START_NODE);
-        if( loopFound === true)
-        {
-            // comment out this line if you know that there are no loops in your decision tree
-             this.response.speak(loopsDetectedMessage);
-        }
-        // ---------------------------------------------------------------
-
-        // set state to asking questions
-        this.handler.state = states.ASKMODE;
-
-        // ask first question, the response will be handled in the askQuestionHandler
-        var message = helper.getSpeechForNode(START_NODE);
-
-        // record the node we are on
-        this.attributes.currentNode = START_NODE;
-
-        // ask the first question
-        this.response.speak(message).listen(message);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.NoIntent': function () {
-        // Handle No intent.
-        this.response.speak(goodbyeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.StopIntent': function () {
-        this.response.speak(goodbyeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.CancelIntent': function () {
-        this.response.speak(goodbyeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.StartOverIntent': function () {
-         this.response.speak(promptToStartMessage).listen(promptToStartMessage);
-         this.emit(':responseReady');         
-    },
-    'AMAZON.HelpIntent': function () {
-        this.response.speak(helpMessage).listen(helpMessage);
-        this.emit(':responseReady');        
-    },
-    'Unhandled': function () {
-        this.response.speak(promptToStartMessage).listen(promptToStartMessage);
-        this.emit(':responseReady');        
-    }
-});
-
-
-// user will have been asked a question when this intent is called. We want to look at their yes/no
-// response and then ask another question. If we have asked more than the requested number of questions Alexa will
-// make a choice, inform the user and then ask if they want to play again
-var askQuestionHandlers = Alexa.CreateStateHandler(states.ASKMODE, {
-
-    'AMAZON.YesIntent': function () {
-        // Handle Yes intent.
-        helper.yesOrNo(this,'yes');
-        this.emit(':responseReady');        
-    },
-    'AMAZON.NoIntent': function () {
-        // Handle No intent.
-         helper.yesOrNo(this, 'no');
-         this.emit(':responseReady');         
-    },
-    'AMAZON.HelpIntent': function () {
-        this.response.speak(promptToSayYesNo).listen(promptToSayYesNo);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.StopIntent': function () {
-        this.response.speak(goodbyeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.CancelIntent': function () {
-        this.response.speak(goodbyeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.StartOverIntent': function () {
-        // reset the game state to start mode
-        this.handler.state = states.STARTMODE;
-        this.response.speak(welcomeMessage).listen(repeatWelcomeMessage);
-        this.emit(':responseReady');        
-    },
-    'Unhandled': function () {
-        this.response.speak(promptToSayYesNo).listen(promptToSayYesNo);
-        this.emit(':responseReady');        
-    }
-});
-
-// user has heard the final choice and has been asked if they want to hear the description or to play again
-var descriptionHandlers = Alexa.CreateStateHandler(states.DESCRIPTIONMODE, {
-
- 'AMAZON.YesIntent': function () {
-        // Handle Yes intent.
-        // reset the game state to start mode
-        this.handler.state = states.STARTMODE;
-        this.response.speak(welcomeMessage).listen(repeatWelcomeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.NoIntent': function () {
-        // Handle No intent.
-        this.response.speak(goodbyeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.HelpIntent': function () {
-        this.response.speak(promptToSayYesNo).listen(promptToSayYesNo);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.StopIntent': function () {
-        this.response.speak(goodbyeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.CancelIntent': function () {
-        this.response.speak(goodbyeMessage);
-        this.emit(':responseReady');        
-    },
-    'AMAZON.StartOverIntent': function () {
-        // reset the game state to start mode
-        this.handler.state = states.STARTMODE;
-        this.response.speak(welcomeMessage).listen(repeatWelcomeMessage);
-        this.emit(':responseReady');        
-    },
-    'DescriptionIntent': function () {
-        //var reply = this.event.request.intent.slots.Description.value;
-        //console.log('HEARD:' + reply);
-        helper.giveDescription(this);
-    },
-    'Unhandled': function () {
-        this.response.speak(promptToSayYesNo).listen(promptToSayYesNo);
-        this.emit(':responseReady');        
-    }
-});
-
-// --------------- Helper Functions  -----------------------
-
-var helper = {
-
-    // gives the user more information on their final choice
-    giveDescription: function (context) {
-
-        // get the speech for the child node
-        var description = helper.getDescriptionForNode(context.attributes.currentNode);
-        var message = description + ', ' + repeatWelcomeMessage;
-
-        context.response.speak(message).listen(message);
-    },
-
-    // logic to provide the responses to the yes or no responses to the main questions
-    yesOrNo: function (context, reply) {
-
-        // this is a question node so we need to see if the user picked yes or no
-        var nextNodeId = helper.getNextNode(context.attributes.currentNode, reply);
-
-        // error in node data
-        if (nextNodeId == -1)
-        {
-            context.handler.state = states.STARTMODE;
-
-            // the current node was not found in the nodes array
-            // this is due to the current node in the nodes array having a yes / no node id for a node that does not exist
-            context.response.speak(nodeNotFoundMessage);
-        }
-
-        // get the speech for the child node
-        var message = helper.getSpeechForNode(nextNodeId);
-
-        // have we made a decision
-        if (helper.isAnswerNode(nextNodeId) === true) {
-
-            // set the game state to description mode
-            context.handler.state = states.DESCRIPTIONMODE;
-
-            // append the play again prompt to the decision and speak it
-            message = decisionMessage + ' ' + message + ' ,' + playAgainMessage;
-        }
-
-        // set the current node to next node we want to go to
-        context.attributes.currentNode = nextNodeId;
-
-        context.response.speak(message).listen(message);
-    },
-
-    // gets the description for the given node id
-    getDescriptionForNode: function (nodeId) {
-
-        for (var i = 0; i < nodes.length; i++) {
-            if (nodes[i].node == nodeId) {
-                return nodes[i].description;
-            }
-        }
-        return descriptionNotFoundMessage + nodeId;
-    },
-
-    // returns the speech for the provided node id
-    getSpeechForNode: function (nodeId) {
-
-        for (var i = 0; i < nodes.length; i++) {
-            if (nodes[i].node == nodeId) {
-                return nodes[i].message;
-            }
-        }
-        return speechNotFoundMessage + nodeId;
-    },
-
-    // checks to see if this node is an choice node or a decision node
-    isAnswerNode: function (nodeId) {
-
-        for (var i = 0; i < nodes.length; i++) {
-            if (nodes[i].node == nodeId) {
-                if (nodes[i].yes === 0 && nodes[i].no === 0) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    },
-
-    // gets the next node to traverse to based on the yes no response
-    getNextNode: function (nodeId, yesNo) {
-        for (var i = 0; i < nodes.length; i++) {
-            if (nodes[i].node == nodeId) {
-                if (yesNo == "yes") {
-                    return nodes[i].yes;
-                }
-                return nodes[i].no;
-            }
-        }
-        // error condition, didnt find a matching node id. Cause will be a yes / no entry in the array but with no corrosponding array entry
-        return -1;
-    },
-
-    // Recursively walks the node tree looking for nodes already visited
-    // This method could be changed if you want to implement another type of checking mechanism
-    // This should be run on debug builds only not production
-    // returns false if node tree path does not contain any previously visited nodes, true if it finds one
-    debugFunction_walkNode: function (nodeId) {
-
-        // console.log("Walking node: " + nodeId);
-
-        if( helper.isAnswerNode(nodeId) === true) {
-            // found an answer node - this path to this node does not contain a previously visted node
-            // so we will return without recursing further
-
-            // console.log("Answer node found");
-             return false;
-        }
-
-        // mark this question node as visited
-        if( helper.debugFunction_AddToVisited(nodeId) === false)
-        {
-            // node was not added to the visited list as it already exists, this indicates a duplicate path in the tree
-            return true;
-        }
-
-        // console.log("Recursing yes path");
-        var yesNode = helper.getNextNode(nodeId, "yes");
-        var duplicatePathHit = helper.debugFunction_walkNode(yesNode);
-
-        if( duplicatePathHit === true){
-            return true;
-        }
-
-        // console.log("Recursing no");
-        var noNode = helper.getNextNode(nodeId, "no");
-        duplicatePathHit = helper.debugFunction_walkNode(noNode);
-
-        if( duplicatePathHit === true){
-            return true;
-        }
-
-        // the paths below this node returned no duplicates
-        return false;
-    },
-
-    // checks to see if this node has previously been visited
-    // if it has it will be set to 1 in the array and we return false (exists)
-    // if it hasnt we set it to 1 and return true (added)
-    debugFunction_AddToVisited: function (nodeId) {
-
-        if (visited[nodeId] === 1) {
-            // node previously added - duplicate exists
-            // console.log("Node was previously visited - duplicate detected");
-            return false;
-        }
-
-        // was not found so add it as a visited node
-        visited[nodeId] = 1;
-        return true;
-    }
 };
